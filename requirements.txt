@@ -1,0 +1,19 @@
+# Core dependencies
+discord.py>=2.3.2
+python-dotenv>=1.0.0
+python-decouple>=3.8
+
+# LLM and embeddings
+requests>=2.31.0
+sentence-transformers>=2.2.2
+numpy>=1.24.3
+openai>=1.0.0
+google-generativeai>=0.3.0
+
+# Memory management
+chromadb>=0.4.22
+
+# Optional: Development tools
+black>=23.12.1  # Code formatting
+mypy>=1.8.0    # Type checking
+pytest>=7.4.4   # Testing
