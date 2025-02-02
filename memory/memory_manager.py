@@ -4,6 +4,12 @@ from chromadb.config import Settings as ChromaSettings
 from chromadb.api.types import EmbeddingFunction
 from config.settings import settings
 from utils.embeddings import embedding_manager
+import logging
+import os
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class SentenceTransformerEmbedding(EmbeddingFunction):
     def __call__(self, input: List[str]) -> List[List[float]]:
@@ -11,16 +17,46 @@ class SentenceTransformerEmbedding(EmbeddingFunction):
 
 class MemoryManager:
     def __init__(self):
-        self.client = chromadb.PersistentClient(
-            path=settings.CHROMA_PERSIST_DIR,
-            settings=ChromaSettings(anonymized_telemetry=False)
-        )
+        """Initialize the memory manager with ChromaDB"""
+        self.client = None
+        self.collection = None
         
-        # Create or get collection for user interactions
-        self.collection = self.client.get_or_create_collection(
-            name="user_interactions",
-            embedding_function=SentenceTransformerEmbedding()
-        )
+        try:
+            # Ensure the ChromaDB directory exists
+            os.makedirs(settings.CHROMA_DB_PATH, exist_ok=True)
+            
+            # Initialize ChromaDB client with persistent storage
+            logger.info(f"Initializing ChromaDB at: {settings.CHROMA_DB_PATH}")
+            self.client = chromadb.PersistentClient(
+                path=settings.CHROMA_DB_PATH,
+                settings=ChromaSettings(
+                    anonymized_telemetry=False,
+                    allow_reset=True,
+                    is_persistent=True
+                )
+            )
+            
+            # Try to get existing collection
+            try:
+                self.collection = self.client.get_collection(
+                    name="user_interactions",
+                    embedding_function=SentenceTransformerEmbedding()
+                )
+                logger.info("Found existing collection")
+            except Exception as e:
+                logger.info("No existing collection found, creating new one")
+                # Create new collection
+                self.collection = self.client.create_collection(
+                    name="user_interactions",
+                    embedding_function=SentenceTransformerEmbedding(),
+                    metadata={"hnsw:space": "cosine"}  # Use cosine similarity for embeddings
+                )
+            
+            logger.info("Memory manager initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize memory manager: {e}")
+            raise
     
     def add_memory(self, user_id: str, message: str, role: str) -> None:
         """Add a new memory entry."""
@@ -28,13 +64,21 @@ class MemoryManager:
             # Clean up the message by removing any think tags or response prefixes
             message = self._clean_message(message)
             
+            # Add the memory to ChromaDB
             self.collection.add(
                 documents=[message],
-                metadatas=[{"user_id": user_id, "role": role}],
+                metadatas=[{
+                    "user_id": user_id,
+                    "role": role
+                }],
                 ids=[f"{user_id}_{role}_{len(self.collection.get()['ids'])}"]
             )
+            
+            logger.debug(f"Added memory for user {user_id}")
+            
         except Exception as e:
-            raise Exception(f"Error adding memory: {str(e)}")
+            logger.error(f"Error adding memory: {e}")
+            raise
     
     def _clean_message(self, message: str) -> str:
         """Clean up message by removing think tags and response prefixes."""
@@ -65,21 +109,27 @@ class MemoryManager:
             if limit is None:
                 limit = settings.MAX_MEMORIES_PER_QUERY
 
+            # Query the collection
             results = self.collection.query(
                 query_texts=[query],
                 where={"user_id": user_id},
                 n_results=limit
             )
             
+            # Format the results
             memories = []
-            for doc, metadata in zip(results['documents'][0], results['metadatas'][0]):
-                memories.append({
-                    "text": doc,
-                    "role": metadata["role"]
-                })
+            if results['documents'] and results['documents'][0]:
+                for doc, metadata in zip(results['documents'][0], results['metadatas'][0]):
+                    memories.append({
+                        "text": doc,
+                        "role": metadata["role"]
+                    })
+            
             return memories
+            
         except Exception as e:
-            raise Exception(f"Error retrieving memories: {str(e)}")
+            logger.error(f"Error retrieving memories: {e}")
+            return []
     
     def get_memory_count(self, user_id: Optional[str] = None) -> int:
         """Get the total number of memories stored for a user or all users."""
@@ -90,7 +140,8 @@ class MemoryManager:
                 results = self.collection.get()
             return len(results['ids'])
         except Exception as e:
-            raise Exception(f"Error counting memories: {str(e)}")
+            logger.error(f"Error counting memories: {e}")
+            return 0
     
     def clear_memories(self, user_id: Optional[str] = None) -> None:
         """Clear all memories for a specific user or all users."""
@@ -107,7 +158,11 @@ class MemoryManager:
                     name="user_interactions",
                     embedding_function=SentenceTransformerEmbedding()
                 )
+            logger.info(f"Cleared memories for {'user ' + user_id if user_id else 'all users'}")
+            
         except Exception as e:
-            raise Exception(f"Error clearing memories: {str(e)}")
+            logger.error(f"Error clearing memories: {e}")
+            raise
 
+# Create singleton instance
 memory_manager = MemoryManager()

@@ -4,6 +4,12 @@ import requests
 import google.generativeai as genai
 from openai import OpenAI
 from config.settings import settings
+import logging
+import json
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 class LLMProvider(ABC):
     """Base class for LLM providers."""
@@ -17,8 +23,8 @@ class LMStudioProvider(LLMProvider):
     """LMStudio provider implementation."""
     
     def __init__(self):
-        self.endpoint = settings.LMSTUDIO_ENDPOINT
-        self.model = settings.LMSTUDIO_MODEL
+        self.endpoint = settings.LLM_BASE_URL
+        self.model = settings.LLM_MODEL
     
     def generate_response(self, messages: List[Dict[str, str]], timeout: int) -> str:
         response = requests.post(
@@ -27,7 +33,7 @@ class LMStudioProvider(LLMProvider):
                 "model": self.model,
                 "messages": messages,
                 "temperature": 0.7,
-                "max_tokens": 8000
+                "max_tokens": 8196
             },
             timeout=timeout
         )
@@ -38,18 +44,27 @@ class OpenAIProvider(LLMProvider):
     """OpenAI provider implementation."""
     
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = OpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            base_url=settings.OPENAI_API_BASE
+        )
         self.model = settings.OPENAI_MODEL
     
     def generate_response(self, messages: List[Dict[str, str]], timeout: int) -> str:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=8000,
-            timeout=timeout
-        )
-        return response.choices[0].message.content
+        try:
+            logger.debug(f"Sending request to OpenAI with messages: {json.dumps(messages, indent=2)}")
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.7,
+                timeout=timeout
+            )
+            content = response.choices[0].message.content
+            logger.debug(f"Got response from OpenAI: {content}")
+            return content
+        except Exception as e:
+            logger.error(f"Error communicating with OpenAI: {str(e)}", exc_info=True)
+            raise Exception(f"Error communicating with OpenAI: {str(e)}")
 
 class GeminiProvider(LLMProvider):
     """Google Gemini provider implementation."""
@@ -64,6 +79,7 @@ class GeminiProvider(LLMProvider):
                 "max_output_tokens": 2048,
             }
         )
+        logger.info(f"Initialized Gemini provider with model: {settings.GEMINI_MODEL}")
     
     def generate_response(self, messages: List[Dict[str, str]], timeout: int) -> str:
         try:

@@ -1,42 +1,53 @@
 from typing import Dict, List, Optional
 import time
 import numpy as np
+import re
 from config.settings import settings
 from utils.embeddings import embedding_manager
 from .providers import get_llm_provider
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 class LLMClient:
     def __init__(self):
+        logger.info("Initializing LLM client...")
         self.provider = get_llm_provider()
         self.timeout = settings.API_TIMEOUT
         self.max_retries = settings.MAX_RETRIES
+        logger.info(f"Using provider: {type(self.provider).__name__}")
+        logger.info(f"Timeout: {self.timeout}s, Max retries: {self.max_retries}")
         
         self.system_prompt = (
-            "You are Autogen, a friendly and natural conversational AI. Your goal is to chat in a way that feels easy, natural, and helpful. Here's how to keep the conversation flowing:\n\n"
+            "You are Autogen, a friendly and direct conversational AI. Follow these rules strictly:\n\n"
             "1. Keep things sounding natural—don't repeat the same phrases over and over.\n"
-            "2. Pay attention to what's already been said so the conversation feels connected and smooth.\n"
-            "3. Keep your replies short, clear, and helpful—get to the point without rambling.\n"
-            "4. For direct questions, give only the answer without adding extra commentary unless the user asks for more details.\n"
-            "5. Don't overcomplicate things. Be concise and direct while staying friendly.\n"
-            "6. Stay focused on the current topic. Don't drift off-topic unless the user asks.\n"
-            "7. If someone mentions another person, don't assume they're part of the conversation unless it's clear they are.\n"
-            "8. Just use plain text—no fancy formatting, markdown, or extra symbols.\n\n"
-            "Above all, keep it friendly and conversational, like you're chatting with a friend!"
+            "2. For direct questions, give ONLY the answer - no extra commentary or suggestions.\n"
+            "3. If you don't know something, just say 'I don't know' - don't speculate.\n"
+            "4. Keep responses very short and to the point.\n"
+            "5. Don't add suggestions or follow-up questions unless explicitly asked.\n"
+            "6. Don't make assumptions about what the user might want to know.\n"
+            "7. Stay strictly on topic - only address what was explicitly asked.\n"
+            "8. Don't try to be overly friendly but you can use emojis where appropriate.\n"
+            "9. If someone mentions another person, don't assume they're part of the conversation unless it's clear they are.\n"
+            "10. When user says phrases like 'thanks', 'that's enough', 'goodbye', just respond with a simple acknowledgment like 'You're welcome' or 'Goodbye' - don't provide any additional information.\n"
+            "11. Don't answer a question with a follow-up question, unless it makes sense.\n"
         )
 
     def _make_request(self, messages: List[Dict[str, str]], retries: int = 0) -> Optional[str]:
         """Make a request to the LLM provider with retry logic."""
         try:
             content = self.provider.generate_response(messages, self.timeout)
-            
+
             # Remove any thinking process tags and their content
             if "<think>" in content and "</think>" in content:
                 start = content.find("<think>")
                 end = content.find("</think>") + len("</think>")
                 content = content[end:].strip()
-            
+
             return content
-            
+
         except Exception as e:
             if retries < self.max_retries:
                 time.sleep(2 ** retries)  # Exponential backoff
@@ -47,8 +58,7 @@ class LLMClient:
         """Filter memories to only include those relevant to the current topic."""
         if not memories:
             return []
-            
-        # Convert memories to a format suitable for embedding comparison
+        
         memory_texts = [mem["text"] for mem in memories]
         
         # Get embeddings for the current topic and memories
@@ -60,7 +70,7 @@ class LLMClient:
         for i, mem_emb in enumerate(memory_embeddings):
             sim = float(np.dot(topic_embedding, mem_emb))
             memory_scores.append((i, sim))
-            print(f"Memory {i}: '{memory_texts[i]}' - Similarity: {sim:.3f}")
+            logger.debug(f"Memory {i}: '{memory_texts[i][:50]}...' - Similarity: {sim:.3f}")
         
         # Sort memories by similarity score
         memory_scores.sort(key=lambda x: x[1], reverse=True)
@@ -82,7 +92,7 @@ class LLMClient:
         relevant_indices.sort()
         
         filtered_memories = [memories[i] for i in relevant_indices]
-        print(f"Selected {len(filtered_memories)} relevant memories")
+        logger.info(f"Selected {len(filtered_memories)} relevant memories")
         return filtered_memories
     
     def get_response(
@@ -91,6 +101,7 @@ class LLMClient:
         context: Optional[List[Dict[str, str]]] = None
     ) -> str:
         """Get a response from the LLM."""
+        logger.info(f"Getting response for message: {user_message}")
         messages = []
         
         # Add system message
@@ -102,7 +113,7 @@ class LLMClient:
         # Add context if provided
         if context:
             # Filter memories for relevance
-            print("\nFiltering memories for relevance to:", user_message)
+            logger.debug(f"Filtering {len(context)} context messages")
             filtered_context = self._filter_relevant_memories(context, user_message)
             
             if filtered_context:
@@ -111,6 +122,7 @@ class LLMClient:
                 context_str = "\n".join([
                     f"{mem['role']}: {mem['text']}" for mem in recent_context
                 ])
+                logger.debug(f"Adding context to messages: {context_str[:200]}...")
                 messages.append({
                     "role": "system",
                     "content": f"Relevant conversation context:\n{context_str}"
@@ -122,6 +134,7 @@ class LLMClient:
             "content": user_message
         })
         
+        logger.debug(f"Sending {len(messages)} messages to LLM")
         response = self._make_request(messages)
         
         return response

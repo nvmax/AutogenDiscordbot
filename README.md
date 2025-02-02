@@ -1,10 +1,17 @@
 # Autogen Discord Bot
 
-Autogen is an intelligent Discord bot powered by LMStudio and ChromaDB, featuring memory management and natural conversation capabilities. It maintains context through conversations and provides human-like responses while efficiently managing long messages and user interactions.
+Autogen is an intelligent Discord bot powered by multiple LLM providers (LMStudio, OpenAI, Google Gemini), featuring memory management, web search capabilities, and natural conversation abilities. It maintains context through conversations and provides human-like responses while efficiently managing long messages and user interactions.
 
 ## Features
 
-- 🤖 Natural conversation using local LLM through LMStudio
+- 🤖 Multiple LLM Provider Support:
+  - LMStudio (local LLM)
+  - OpenAI API
+  - Google Gemini
+- 🔍 Web Search Integration:
+  - Search command: `search for <query>` or `search: <query>`
+  - Customizable result limits (e.g., `search for python: 5`, `search: latest AI news: 3`)
+  - Smart result formatting and summarization
 - 💭 Long-term memory using ChromaDB with semantic search
 - 🎯 Smart context retrieval for relevant responses
 - 🔒 Server and channel-specific permissions
@@ -16,9 +23,12 @@ Autogen is an intelligent Discord bot powered by LMStudio and ChromaDB, featurin
 ## Prerequisites
 
 - Python 3.10 or higher
-- LMStudio running locally (or another OpenAI-compatible API endpoint)
+- One of the following LLM providers:
+  - LMStudio running locally (or another OpenAI-compatible API endpoint)
+  - OpenAI API key
+  - Google Gemini API key
 - Discord Bot Token and Application
-- CUDA-capable GPU (recommended for LMStudio)
+- CUDA-capable GPU (recommended for local LLM)
 
 ## Installation
 
@@ -26,13 +36,13 @@ Autogen is an intelligent Discord bot powered by LMStudio and ChromaDB, featurin
 
 1. Create a new conda environment:
 ```bash
-conda create -n autogen python=3.10
+conda create -n autogen python=3.12
 conda activate autogen
 ```
 
 2. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/autogen-bot.git
+git clone https://github.com/nvmax/AutogenDiscordbot.git
 cd autogen-bot
 ```
 
@@ -66,8 +76,14 @@ ALLOWED_SERVER_ID=your_server_id
 ALLOWED_CHANNEL_ID=your_channel_id
 
 # LLM Configuration
-LLM_ENDPOINT=http://localhost:1234/v1
+LLM_PROVIDER=lmstudio  # Options: lmstudio, openai, gemini
+LLM_BASE_URL=http://localhost:1234/v1  # For LMStudio
 LLM_MODEL=your_model_name
+
+# API Keys (if using OpenAI or Gemini)
+OPENAI_API_KEY=your_openai_key
+OPENAI_API_BASE=https://api.openai.com/v1  # Optional, for OpenAI-compatible APIs
+GEMINI_API_KEY=your_gemini_key
 
 # Memory Configuration
 CHROMA_PERSIST_DIR=./data/chroma
@@ -87,17 +103,49 @@ TOP_MEMORIES_TO_CONSIDER=8        # Number of top memories to consider
    - Get your Discord bot token from [Discord Developer Portal](https://discord.com/developers/applications)
    - Find your server ID by enabling Developer Mode in Discord and right-clicking your server
    - Find your channel ID by right-clicking the channel you want to use
+   - If using OpenAI or Gemini, obtain API keys from their respective platforms
 
-## Running LMStudio
+## Using Different LLM Providers
 
+### LMStudio (Local)
 1. Download and install [LMStudio](https://lmstudio.ai/)
 2. Load your preferred model (recommended: deepseek-r1-distill-qwen-14b)
 3. Start the local server with the following settings:
-   - Host: 0.0.0.0
+   - Host: assigned by LMStudio, enable network cors access
    - Port: 1234
    - Context Length: 4096 (or model maximum)
    - Temperature: 0.7
-   - Max Tokens: 8000 (for handling longer responses)
+   - Max Tokens: 8196
+
+### OpenAI
+1. Get an API key from [OpenAI Platform](https://platform.openai.com/)
+2. Set `LLM_PROVIDER=openai` in your `.env` file
+3. Configure your OpenAI API key and model name
+
+### Google Gemini
+1. Get an API key from [Google AI Studio](https://ai.google.dev/)
+2. Set `LLM_PROVIDER=gemini` in your `.env` file
+3. Configure your Gemini API key
+
+## Using Web Search
+
+The bot supports web searching with the following commands:
+
+1. Basic search:
+```
+search for what is python programming
+```
+
+2. Search with limit:
+```
+search for best python frameworks: 5
+```
+or
+```
+search: latest AI news: 3
+```
+
+The bot will search the web and provide a formatted summary of the results.
 
 ## Features in Detail
 

@@ -1,37 +1,58 @@
-from typing import Dict, List
-from decouple import config
+from pydantic_settings import BaseSettings
+from typing import Optional
+import os
 
-class Settings:
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables"""
+    
     # Discord Configuration
-    DISCORD_TOKEN: str = config('DISCORD_TOKEN')
-    ALLOWED_SERVER_ID: int = config('ALLOWED_SERVER_ID', cast=int)
-    ALLOWED_CHANNEL_ID: int = config('ALLOWED_CHANNEL_ID', cast=int)
+    DISCORD_TOKEN: str
+    ALLOWED_SERVER_ID: str
+    ALLOWED_CHANNEL_ID: str
     
     # LLM Configuration
-    LLM_PROVIDER: str = config('LLM_PROVIDER', default='lmstudio')  # Options: lmstudio, openai, gemini
+    LLM_PROVIDER: str = "lmstudio"  # Default to lmstudio
     
     # LMStudio Configuration
-    LMSTUDIO_ENDPOINT: str = config('LMSTUDIO_ENDPOINT', default='http://192.168.1.225:1234/v1')
-    LMSTUDIO_MODEL: str = config('LMSTUDIO_MODEL', default='deepseek-r1-distill-qwen-14b')
+    LLM_BASE_URL: str = "http://localhost:1234/v1"  # Default local endpoint
+    LLM_MODEL: str = "deepseek-r1-distill-llama-8b@q4_k_m"  # Default model
     
     # OpenAI Configuration
-    OPENAI_API_KEY: str = config('OPENAI_API_KEY', default='')
-    OPENAI_MODEL: str = config('OPENAI_MODEL', default='gpt-3.5-turbo')
+    OPENAI_API_BASE: str = "http://localhost:1234/v1"
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_MODEL: str = "gpt-3.5-turbo"
     
     # Google Gemini Configuration
-    GEMINI_API_KEY: str = config('GEMINI_API_KEY', default='')
-    GEMINI_MODEL: str = config('GEMINI_MODEL', default='gemini-pro')
-
-    # Memory Configuration
-    CHROMA_PERSIST_DIR: str = config('CHROMA_PERSIST_DIR', default='./data/chroma')
-    EMBEDDINGS_MODEL: str = config('EMBEDDINGS_MODEL', default='sentence-transformers/all-mpnet-base-v2')
-    MAX_MEMORIES_PER_QUERY: int = config('MAX_MEMORIES_PER_QUERY', default=10, cast=int)  # Number of memories to retrieve per query
-    CONTEXT_WINDOW_SIZE: int = config('CONTEXT_WINDOW_SIZE', default=5, cast=int)  # Number of recent messages to include in context
-    MEMORY_SIMILARITY_THRESHOLD: float = config('MEMORY_SIMILARITY_THRESHOLD', default=0.15, cast=float)
-    TOP_MEMORIES_TO_CONSIDER: int = config('TOP_MEMORIES_TO_CONSIDER', default=8, cast=int)
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-2.0-flash-exp"
+    
+    # Database Configuration
+    CHROMA_DB_PATH: str = "./data/chromadb"  # For backward compatibility
+    CHROMA_PERSIST_DIR: str = "./data/chromadb"  # Used by memory manager
+    
+    # Embeddings Configuration
+    EMBEDDINGS_MODEL: str = "sentence-transformers/all-mpnet-base-v2"
+    
+    # Memory Settings
+    MAX_MEMORIES_PER_QUERY: int = 15
+    CONTEXT_WINDOW_SIZE: int = 10
+    MEMORY_SIMILARITY_THRESHOLD: float = 0.15
+    TOP_MEMORIES_TO_CONSIDER: int = 8
     
     # API Configuration
-    API_TIMEOUT: int = config('API_TIMEOUT', default=30, cast=int)
-    MAX_RETRIES: int = config('MAX_RETRIES', default=3, cast=int)
+    API_TIMEOUT: int = 30
+    MAX_RETRIES: int = 3
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Ensure CHROMA_PERSIST_DIR matches CHROMA_DB_PATH
+        self.CHROMA_PERSIST_DIR = self.CHROMA_DB_PATH
+        # Create the directory if it doesn't exist
+        os.makedirs(self.CHROMA_DB_PATH, exist_ok=True)
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
 
+# Create settings instance
 settings = Settings()
