@@ -1,29 +1,43 @@
 # Core dependencies
 discord.py>=2.3.2
-pydantic>=2.5.2
-pydantic-settings>=2.1.0
+pydantic==2.10.6
+pydantic-settings==2.7.1
 python-dotenv>=1.0.0
 
 # LLM and API clients
-openai>=1.0.0
+openai>=1.58.0
 google-generativeai>=0.3.0
-requests>=2.31.0
+requests>=2.32.3
+aiohttp>=3.8.0
 
 # Memory and embeddings
 chromadb>=0.4.22
-sentence-transformers>=2.2.2
-numpy>=1.24.0
+sentence-transformers==3.4.1
+numpy<2.0.0,>=1.26.4  # Important: Keep numpy below 2.0.0 for compatibility
+scipy==1.15.1
+scikit-learn==1.6.1
 
 # Web search functionality
-pyautogen>=0.2.0
+pyautogen==0.7.4
 undetected-chromedriver>=3.5.4
 selenium>=4.16.0
 nest-asyncio>=1.5.8
 
+# Transformers and NLP
+transformers==4.48.3
+tokenizers<0.22,>=0.21.0
+huggingface-hub<1.0,>=0.24.0
+
 # Utilities and logging
 python-json-logger>=2.0.7
 dataclasses>=0.6
-typing-extensions>=4.8.0
+typing-extensions>=4.12.2
+filelock>=3.17.0
+packaging>=24.2
+regex>=2024.11.6
+tqdm>=4.67.1
+beautifulsoup4>=4.12.0
+bs4>=0.0.1
 
 # Development tools
 black>=23.12.1  # Code formatting

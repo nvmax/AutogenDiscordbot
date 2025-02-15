@@ -5,16 +5,13 @@ import json
 import logging
 import asyncio
 import os
-from autogen import UserProxyAgent, AssistantAgent
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from config.settings import settings
-
-import nest_asyncio
-nest_asyncio.apply()
+from datetime import datetime
+import discord
+import aiohttp
+from bs4 import BeautifulSoup
+import bs4
+from urllib.parse import urljoin, urlparse
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +23,7 @@ class WebPage:
     title: str
     url: str
     summary: str
+    image_url: Optional[str] = None
     metadata: Dict[str, str] = field(default_factory=dict)  # Additional metadata like date, author, etc.
 
 @dataclass
@@ -35,32 +33,51 @@ class SearchResult:
     results: List[WebPage]
     error: Optional[str] = None
 
-    def format_discord(self) -> str:
-        """Format the result for Discord output"""
-        try:
-            if self.error:
-                logger.error(f"Formatting error result: {self.error}")
-                return f"**Error:** {self.error}"
-
-            sections = []
-            logger.debug(f"Formatting search results. Query: {self.query}, Number of results: {len(self.results)}")
+    def format_discord(self) -> List[discord.Embed]:
+        """Format search results as Discord embeds"""
+        if not self.results:
+            return []
             
-            # Add search query header
-            sections.append(f"**Search Results for:** {self.query}")
-            
-            # Just add the URLs to let Discord handle the link previews
-            for i, result in enumerate(self.results, 1):
-                logger.debug(f"Adding URL for result {i}: {result.url}")
-                sections.append(result.url)
-            
-            # Join all sections with double newlines for spacing
-            formatted = "\n\n".join(sections)
-            logger.debug(f"Final formatted output length: {len(formatted)}")
-            return formatted
-            
-        except Exception as e:
-            logger.error(f"Failed to format Discord message: {e}", exc_info=True)
-            return "Error: Failed to format search results"
+        embeds = []
+        for i, result in enumerate(self.results, 1):
+            try:
+                # Clean the URL by removing tracking parameters
+                cleaned_url = result.url
+                if "?" in cleaned_url:
+                    cleaned_url = cleaned_url.split("?")[0]
+                
+                # Create an embed for each result
+                embed = discord.Embed(
+                    title=result.title[:256],  # Discord has a 256 character limit for titles
+                    url=cleaned_url,
+                    description=result.summary[:4096] if result.summary else "No summary available",
+                    color=0x00b0f4  # Nice blue color
+                )
+                
+                # Add thumbnail image if available
+                if result.image_url:
+                    embed.set_thumbnail(url=result.image_url)
+                    # Also try setting the image in case thumbnail doesn't work
+                    embed.set_image(url=result.image_url)
+                
+                embed.set_footer(text=f"Result {i} of {len(self.results)}")
+                
+                # Add any additional metadata if available
+                if result.metadata:
+                    metadata_text = "\n".join([f"**{k}:** {v}" for k, v in result.metadata.items()])
+                    if metadata_text:
+                        embed.add_field(
+                            name="Additional Information",
+                            value=metadata_text[:1024],  # Discord has a 1024 character limit for field values
+                            inline=False
+                        )
+                
+                embeds.append(embed)
+            except Exception as e:
+                logger.error(f"Error formatting result {i} as Discord embed: {e}")
+                continue
+                
+        return embeds
 
 class WebSearchService:
     def __init__(self):
@@ -139,8 +156,11 @@ class WebSearchService:
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
             
-            # Initialize undetected-chromedriver
-            self.driver = uc.Chrome(options=options)
+            # Initialize undetected-chromedriver with specific version
+            self.driver = uc.Chrome(
+                options=options,
+                version_main=132  # Match installed Chrome version
+            )
             self.wait = WebDriverWait(self.driver, 10)  # 10 second wait timeout
             
             logger.info(f"WebSearchService initialized with {settings.LLM_PROVIDER}")
@@ -185,89 +205,78 @@ class WebSearchService:
             # Wait for search results
             logger.info("Waiting for search results...")
             try:
-                search_results = self.wait.until(
-                    EC.presence_of_all_elements_located((By.CLASS_NAME, "result"))
-                )[:result_limit]  # Get specified number of results
-                logger.info(f"Found {len(search_results)} search results")
+                results = self.driver.find_elements(By.CLASS_NAME, "result")
+                logger.info(f"Found {len(results)} search results")
+                
+                processed_results = []
+                for i, result in enumerate(results[:result_limit], 1):
+                    try:
+                        logger.info(f"Processing result {i}...")
+                        
+                        # Extract title and URL
+                        title_elem = result.find_element(By.CLASS_NAME, "result__title")
+                        title = title_elem.text.strip()
+                        url = title_elem.find_element(By.TAG_NAME, "a").get_attribute("href")
+                        
+                        # Extract summary
+                        summary = ""
+                        try:
+                            summary = result.find_element(By.CLASS_NAME, "result__snippet").text.strip()
+                        except:
+                            pass
+                            
+                        # Try to find image
+                        image_url = None
+                        try:
+                            # First try to get preview image from the actual webpage
+                            image_url = await self.get_preview_image(url)
+                            
+                            if not image_url:
+                                # Try to find image in search result
+                                images = result.find_elements(By.TAG_NAME, "img")
+                                for img in images:
+                                    src = img.get_attribute("src")
+                                    if src and not any(x in src.lower() for x in ['icon', 'logo', 'avatar']):
+                                        image_url = src
+                                        break
+                            
+                            # Fallback to favicon if still no image
+                            if not image_url:
+                                domain = urlparse(url).netloc
+                                image_url = f"https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://{domain}&size=256"
+                                
+                        except Exception as e:
+                            logger.error(f"Error getting image for result: {e}")
+                            # Use favicon as fallback
+                            domain = urlparse(url).netloc
+                            image_url = f"https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://{domain}&size=256"
+                        
+                        logger.info(f"Successfully extracted result {i}: {title}")
+                        processed_results.append(WebPage(
+                            title=title,
+                            url=url,
+                            summary=summary,
+                            image_url=image_url
+                        ))
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing result {i}: {e}")
+                        continue
+                
+                if not processed_results:
+                    logger.error("No valid search results were extracted")
+                    return SearchResult(query=query, results=[], error="No search results found")
+                
+                logger.info(f"Returning {len(processed_results)} search results")
+                return SearchResult(
+                    query=query,
+                    results=processed_results,
+                    error=None
+                )
+                
             except Exception as e:
                 logger.error(f"Failed to find search results: {str(e)}\nFull traceback:", exc_info=True)
                 raise
-            
-            # Extract information from results
-            results_text = ""
-            web_pages = []  # Store WebPage objects
-            for i, result in enumerate(search_results):
-                try:
-                    logger.info(f"Processing result {i+1}...")
-                    
-                    # Find elements within each result
-                    title_elem = result.find_element(By.CLASS_NAME, "result__title")
-                    link_elem = result.find_element(By.CLASS_NAME, "result__url")
-                    snippet_elem = result.find_element(By.CLASS_NAME, "result__snippet")
-                    
-                    title = title_elem.text.strip()
-                    url = link_elem.get_attribute("href")
-                    snippet = snippet_elem.text.strip()
-                    
-                    # Create WebPage object
-                    web_pages.append(WebPage(
-                        title=title,
-                        url=url,
-                        summary=snippet
-                    ))
-                    
-                    logger.info(f"Successfully extracted result {i+1}: {title}")
-                    results_text += f"Title: {title}\nURL: {url}\nContent: {snippet}\n\n"
-                except Exception as e:
-                    logger.error(f"Failed to extract result {i+1}: {str(e)}\nFull traceback:", exc_info=True)
-                    continue
-            
-            if not web_pages:
-                logger.error("No valid search results were extracted")
-                return SearchResult(query=query, results=[], error="No search results found")
-            
-            logger.info("Creating analysis prompt...")
-            # Create analysis prompt
-            search_prompt = (
-                f"Here are the search results for: {query}\n\n"
-                f"{results_text}\n\n"
-                "Analyze these results and format your findings in this exact format:\n\n"
-                "[START]\n"
-                "{\n"
-                f'    "query": "{query}",\n'
-                '    "results": [\n'
-                '        {\n'
-                '            "title": "Result title",\n'
-                '            "url": "Result URL",\n'
-                '            "summary": "Result summary"\n'
-                '        }\n'
-                "    ]\n"
-                "}\n"
-                "[END]\n\n"
-                "IMPORTANT:\n"
-                "1. Only include information from the search results\n"
-                "2. Use real source URLs from the results\n"
-                "3. Do not make up information\n"
-            )
-            
-            logger.info("Getting analysis from assistant...")
-            # Get analysis from assistant
-            chat_result = await asyncio.wait_for(
-                self.user_proxy.a_initiate_chat(
-                    recipient=self.assistant,
-                    message=search_prompt,
-                    max_turns=2
-                ),
-                timeout=30  # 30 second timeout
-            )
-            
-            # Return the original web pages instead of processing chat result
-            logger.info(f"Returning {len(web_pages)} search results")
-            return SearchResult(
-                query=query,
-                results=web_pages,
-                error=None
-            )
             
         except asyncio.TimeoutError:
             logger.error("Search request timed out")
@@ -286,6 +295,47 @@ class WebSearchService:
                 logger.info("Browser cleanup completed")
             except Exception as e:
                 logger.warning(f"Failed to clean up browser resources: {str(e)}\nFull traceback:", exc_info=True)
+
+    async def get_preview_image(self, url: str) -> Optional[str]:
+        """Get preview image from a URL using Open Graph tags"""
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.get(url, timeout=5) as response:
+                    if response.status == 200:
+                        html = await response.text()
+                        soup = BeautifulSoup(html, 'html.parser')
+                        
+                        # Try Open Graph image
+                        og_image = soup.find('meta', property='og:image')
+                        if og_image:
+                            image_url = og_image.get('content')
+                            if image_url:
+                                # Make sure the URL is absolute
+                                return urljoin(url, image_url)
+                        
+                        # Try Twitter card image
+                        twitter_image = soup.find('meta', {'name': 'twitter:image'})
+                        if twitter_image:
+                            image_url = twitter_image.get('content')
+                            if image_url:
+                                return urljoin(url, image_url)
+                        
+                        # Try finding the first large image
+                        images = soup.find_all('img')
+                        for img in images:
+                            src = img.get('src')
+                            if src and not any(x in src.lower() for x in ['icon', 'logo', 'avatar']):
+                                width = img.get('width')
+                                height = img.get('height')
+                                if width and height and int(width) >= 200 and int(height) >= 200:
+                                    return urljoin(url, src)
+                            
+        except Exception as e:
+            logger.error(f"Error getting preview image for {url}: {e}")
+        return None
 
     async def _process_chat_result(self, result: Any) -> Optional[SearchResult]:
         """Process the chat result and extract the JSON response."""
@@ -331,7 +381,8 @@ class WebSearchService:
                     WebPage(
                         title=result["title"],
                         url=result["url"],
-                        summary=result["summary"]
+                        summary=result["summary"],
+                        image_url=result.get("image_url")
                     )
                 )
             

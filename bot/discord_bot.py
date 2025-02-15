@@ -172,13 +172,17 @@ async def on_message(message: discord.Message):
                 await thinking_msg.edit(content="❌ No results found.")
                 return
                 
-            response = result.format_discord()
+            embeds = result.format_discord()
             
-            # Split and send response
-            chunks = bot.split_message(response)
-            await thinking_msg.edit(content=chunks[0])
-            for chunk in chunks[1:]:
-                await message.channel.send(chunk)
+            # Send embeds in batches of 10 (Discord's limit)
+            for i in range(0, len(embeds), 10):
+                batch = embeds[i:i+10]
+                if i == 0:
+                    # Replace thinking message with first batch
+                    await thinking_msg.edit(content=f"🔍 Search results for: {search_query}", embeds=batch)
+                else:
+                    # Send additional batches as new messages
+                    await message.channel.send(embeds=batch)
                 
         else:
             # Handle normal conversation
