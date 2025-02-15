@@ -13,6 +13,12 @@ import bs4
 from urllib.parse import urljoin, urlparse
 import requests
 from config import settings
+import undetected_chromedriver as uc
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from autogen import UserProxyAgent, AssistantAgent
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

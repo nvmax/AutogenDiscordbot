@@ -11,24 +11,22 @@ class Settings(BaseSettings):
     ALLOWED_CHANNEL_ID: str
     
     # LLM Configuration
-    LLM_PROVIDER: str = "lmstudio"  # Default to lmstudio
-    
-    # LMStudio Configuration
-    LLM_BASE_URL: str = "http://localhost:1234/v1"  # Default local endpoint
-    LLM_MODEL: str = "deepseek-r1-distill-llama-8b@q4_k_m"  # Default model
+    LLM_PROVIDER: str
+    LLM_BASE_URL: str
+    LLM_MODEL: str
     
     # OpenAI Configuration
-    OPENAI_API_BASE: str = "http://localhost:1234/v1"
-    OPENAI_API_KEY: Optional[str] = None
-    OPENAI_MODEL: str = "gpt-3.5-turbo"
+    OPENAI_API_BASE: str
+    OPENAI_API_KEY: Optional[str]
+    OPENAI_MODEL: str
     
     # Google Gemini Configuration
-    GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-2.0-flash-exp"
+    GEMINI_API_KEY: Optional[str]
+    GEMINI_MODEL: str
     
     # Database Configuration
-    CHROMA_DB_PATH: str = "./data/chromadb"  # For backward compatibility
-    CHROMA_PERSIST_DIR: str = "./data/chromadb"  # Used by memory manager
+    CHROMA_DB_PATH: str = "./data/chromadb"  # Keep this default for compatibility
+    CHROMA_PERSIST_DIR: str = "./data/chromadb"  # Keep this default for compatibility
     
     # Embeddings Configuration
     EMBEDDINGS_MODEL: str = "sentence-transformers/all-mpnet-base-v2"
