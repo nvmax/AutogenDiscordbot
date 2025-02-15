@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 import bs4
 from urllib.parse import urljoin, urlparse
 import requests
+from config import settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
