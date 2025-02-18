@@ -17,6 +17,7 @@ class AG2Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.dm_messages = True  # Enable DM messages
         super().__init__(command_prefix="!", intents=intents)
         
         # Remove default help command
@@ -57,6 +58,10 @@ class AG2Bot(commands.Bot):
     
     def is_allowed_channel(self, channel_id: int) -> bool:
         """Check if the channel is allowed."""
+        # Allow DMs (channel_id will be None for DMs)
+        if isinstance(channel_id, type(None)):
+            return True
+            
         allowed_channels = [int(id.strip()) for id in str(settings.ALLOWED_CHANNEL_ID).split(",")]
         is_allowed = channel_id in allowed_channels
         logger.debug(f"Channel {channel_id} allowed: {is_allowed}")
@@ -64,6 +69,10 @@ class AG2Bot(commands.Bot):
     
     def is_allowed_server(self, guild_id: int) -> bool:
         """Check if the server is allowed."""
+        # Allow DMs (guild_id will be None for DMs)
+        if isinstance(guild_id, type(None)):
+            return True
+            
         allowed_servers = [int(id.strip()) for id in str(settings.ALLOWED_SERVER_ID).split(",")]
         is_allowed = guild_id in allowed_servers
         logger.debug(f"Server {guild_id} allowed: {is_allowed}")
@@ -120,16 +129,18 @@ async def on_message(message: discord.Message):
         logger.debug("Ignoring message from self")
         return
     
-    # Check if message is in allowed server and channel
-    if not (bot.is_allowed_server(message.guild.id) and 
+    # Check if this is a DM
+    is_dm = isinstance(message.channel, discord.DMChannel)
+    
+    # For server messages, check if in allowed server and channel
+    if not is_dm and not (bot.is_allowed_server(message.guild.id) and 
             bot.is_allowed_channel(message.channel.id)):
         logger.debug("Message not in allowed server/channel")
         return
-    
-    # Ignore any message containing @
-    if not bot.should_respond(message.content):
-        logger.debug("Should not respond to message")
-        return
+            
+    # For DMs, we'll allow all messages
+    if is_dm:
+        logger.info("Processing DM message")
     
     try:
         logger.info(f"Processing message: {message.content}")
