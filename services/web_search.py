@@ -163,10 +163,9 @@ class WebSearchService:
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
             
-            # Initialize undetected-chromedriver with specific version
+            # Initialize undetected-chromedriver without specifying version
             self.driver = uc.Chrome(
-                options=options,
-                version_main=132  # Match installed Chrome version
+                options=options
             )
             self.wait = WebDriverWait(self.driver, 10)  # 10 second wait timeout
             
