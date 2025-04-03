@@ -19,6 +19,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from autogen import UserProxyAgent, AssistantAgent
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -158,15 +160,25 @@ class WebSearchService:
             )
             
             # Configure Chrome options
-            options = uc.ChromeOptions()
-            options.add_argument("--headless")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
+            def create_chrome_options():
+                options = uc.ChromeOptions()
+                options.add_argument("--headless")
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+                return options
+
+            # Initialize undetected-chromedriver with ChromeDriverManager
+            try:
+                service = Service(ChromeDriverManager().install())
+                self.driver = uc.Chrome(
+                    options=create_chrome_options(),
+                    service=service,
+                    driver_executable_path=service.path  # Use the downloaded ChromeDriver
+                )
+            except Exception as chrome_error:
+                logger.error(f"Failed to initialize Chrome: {chrome_error}")
+                raise
             
-            # Initialize undetected-chromedriver without specifying version
-            self.driver = uc.Chrome(
-                options=options
-            )
             self.wait = WebDriverWait(self.driver, 10)  # 10 second wait timeout
             
             logger.info(f"WebSearchService initialized with {settings.LLM_PROVIDER}")
